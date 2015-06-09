@@ -5,7 +5,6 @@ CREATE TABLE WeatherPrediction(
 	temp INT,
 	liquid_Precip DOUBLE,
 	wind_Speed INT,
-	cloud_Cover INT,
 	ice_Accum DOUBLE,
 	snow_Amount DOUBLE,
 	gust_Speeds INT,

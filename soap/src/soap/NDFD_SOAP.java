@@ -289,77 +289,62 @@ class XMLParser
 	
 	private void parse() throws Exception
 	{
-		//The following builds an xml document out of a string
+		//Attempt 2 at creating a decent parse
+		//First get the document toParse which is in XML, zip, coordinate format
 		String[] toParse = getXMLDoc();
-		DocumentBuilderFactory docBuilderFactory = DocumentBuilderFactory.newInstance();
-        DocumentBuilder docBuilder = docBuilderFactory.newDocumentBuilder();
-        InputSource is = new InputSource(new StringReader(toParse[0]));
-        Document doc = docBuilder.parse(is);
+		String xml = toParse[0];
+		ArrayList<String> pulledLines = new ArrayList();
+		String[] keywords = new String[]{"Temperature", "Liquid Precipitation Amount", "Wind Speed", "Ice Accumulation", "Snow Amount", "Wind Speed Gust", "Relative Humidity"}; 
 		
-        // Here we get the root element of the document to confirm that is has been built correctly
-        doc.getDocumentElement().normalize();
-        System.out.println("Root element of the doc is " + doc.getDocumentElement().getNodeName());
-        
-        // NodeLists holds all of the nodes in the xml document that are tagged with their respective strings
-        NodeList listOfHours = doc.getElementsByTagName("start-valid-time");
-        NodeList layoutKeys = doc.getElementsByTagName("layout-key");
-        //The two following arraylists contain information of the timestamp keys
-        //The timestamp keys contain how many timestamps follow and what their interval is
-        ArrayList<Integer> keyLengths = new ArrayList();
-        ArrayList<String> keys = new ArrayList();
-        
-        //The following is a workaround in order to get the xml back to a relevant string so that we can work with it easier
-        StringWriter writer = new StringWriter();
-    	Transformer transformer = TransformerFactory.newInstance().newTransformer();
-        
-    	//The following for loop takes the keynodes and extracts the amount of timestampts they are assigned to
-    	//It also stores the keys into string format so that we can later pull them and compare them to the data they are assigned to
-    	for(int x = 0; x < layoutKeys.getLength(); x++)
-        {
-        	
-        	transformer.transform(new DOMSource(layoutKeys.item(x)), new StreamResult(writer));
-        	String temp = writer.toString();
-        	String trimmedTemp = trimXML(temp, "layout-key");
-        	//System.out.println(trimmedTemp);
-        	String[] getThisInt = trimmedTemp.split("n");
-        	String[] getThisInt2 = getThisInt[1].split("-");
-        	int lengthInKey = Integer.parseInt(getThisInt2[0]);
-        	keyLengths.add(lengthInKey);
-        	keys.add(trimmedTemp);
-        }
-        
-        ArrayList<ArrayList<String>> validTimes = new ArrayList();
-        
-        
-        // The following for loop populates an arraylist of arraylists which contain the relevant time key in the first variable
-        // and then all of the assigned times related to the time stamp follow. This iterates on the container arraylist for each of 
-        //the time keys
-        // I also understand that makes no sense and that I really need to go back over my comments once I'm done with this program.
-        int countOverallTimesPassed = 0;
-        for(int y = 0; y < layoutKeys.getLength(); y++)
-        {
-        	ArrayList<String> temp = new ArrayList();
-        	temp.add(keys.get(y));
-        	for(int z = 0; z < keyLengths.get(y); z++)
-        	{
-        		transformer.transform(new DOMSource(listOfHours.item(countOverallTimesPassed)), new StreamResult(writer));
-        		String fromTransformer = writer.toString();
-        		String getFormat = trimXML(fromTransformer, "start-valid-time");
-        		System.out.println(fromTransformer + " " + countOverallTimesPassed);
-        		temp.add(getFormat);
-        		System.out.println(getFormat);
-        		countOverallTimesPassed++;
-        	}
-        	validTimes.add(temp);
-        }
-	}
-	
-	// helper method to extract relevant data from string derived from a xml node
-	private String trimXML(String toTrim, String keyword)
-	{
+		int endOfDocument = xml.lastIndexOf(">");
+		int indexForLeftPre = xml.indexOf("<");
+		int indexForRightPre = xml.indexOf(">");
+		int indexForLeftPost = xml.indexOf("<", indexForRightPre);
+		int indexForRightPost = xml.indexOf(">", indexForRightPre + 1);
+		int oldIndexForLeftPostTemp = 0;
+		int oldIndexForRightPostTemp = 0;
+		int nextOldIndexForLeftPostTemp = 0;
+		int nextOldIndexForRightPostTemp = 0;
+		int nextNextOldIndexForLeftPostTemp = 0;
+		int nextNextOldIndexForRightPostTemp = 0;
+		String toAddToPulledLines = " ";
+		System.out.println(endOfDocument + " " + indexForLeftPre + " " + indexForRightPre + " " + indexForLeftPost + " " + indexForRightPost);
 		
-		String[] temp = toTrim.split("<" + keyword + ">");
-		String[] toReturn = temp[1].split("<");
-		return toReturn[0];
+		while(indexForRightPost != endOfDocument)
+		{
+			if(indexForRightPre != (indexForLeftPost - 1))
+			{
+				toAddToPulledLines = xml.substring(indexForRightPre + 1, indexForLeftPost);
+				//System.out.println(toAddToPulledLines);
+
+				pulledLines.add(toAddToPulledLines);
+				for(int y = 0; y < keywords.length; y++)
+				{
+					if((keywords[y].equals(toAddToPulledLines)) == true)
+					{
+						//System.out.println(keywords[y].equals(toAddToPulledLines));
+						pulledLines.add(xml.substring(nextNextOldIndexForLeftPostTemp, nextNextOldIndexForRightPostTemp));
+						//System.out.println(toAddToPulledLines + " " + keywords[y]);
+						//System.out.println(xml.substring(nextNextOldIndexForLeftPostTemp, nextNextOldIndexForRightPostTemp + 1));
+					}
+				}
+			}
+			nextNextOldIndexForLeftPostTemp = nextOldIndexForLeftPostTemp;
+			nextNextOldIndexForRightPostTemp = nextOldIndexForRightPostTemp;
+			nextOldIndexForLeftPostTemp = oldIndexForLeftPostTemp;
+			nextOldIndexForRightPostTemp = oldIndexForRightPostTemp;
+			oldIndexForLeftPostTemp = xml.indexOf("<", indexForRightPost + 1);
+			oldIndexForRightPostTemp = xml.indexOf(">", indexForRightPost + 1);
+			
+			indexForLeftPre = indexForLeftPost;
+			indexForRightPre = indexForRightPost;
+			indexForLeftPost = oldIndexForLeftPostTemp;
+			indexForRightPost = oldIndexForRightPostTemp;
+			toAddToPulledLines = " ";
+			//System.out.println(endOfDocument + " " + indexForLeftPre + " " + indexForRightPre + " " + indexForLeftPost + " " + indexForRightPost);
+		}
+		
+		
+		
 	}
 }
