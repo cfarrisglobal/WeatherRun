@@ -2,29 +2,18 @@ package soap;
 
 
 import javax.xml.soap.*;
-import javax.xml.transform.Source;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.dom.DOMSource;
-import javax.xml.transform.stream.StreamResult;
-import javax.xml.transform.stream.StreamSource;
 import javax.xml.ws.Dispatch;
 import javax.xml.ws.Service;
 import javax.xml.ws.soap.SOAPFaultException;
 import javax.xml.namespace.QName;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
 
 
-
-
-import org.w3c.dom.Document;
-import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
 
 import java.io.*;
 import java.net.URL;
+import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.concurrent.TimeUnit;
 
 public class NDFD_SOAP
@@ -296,11 +285,15 @@ class XMLParser
 		ArrayList<String> pulledLines = new ArrayList();
 		String[] keywords = new String[]{"Temperature", "Liquid Precipitation Amount", "Wind Speed", "Ice Accumulation", "Snow Amount", "Wind Speed Gust", "Relative Humidity"}; 
 		
+		// Set the initial tag locations around the spot we are looking for  data
 		int endOfDocument = xml.lastIndexOf(">");
 		int indexForLeftPre = xml.indexOf("<");
 		int indexForRightPre = xml.indexOf(">");
 		int indexForLeftPost = xml.indexOf("<", indexForRightPre);
 		int indexForRightPost = xml.indexOf(">", indexForRightPre + 1);
+		
+		// The old indexes are used to pull the previous tag whenever we find a match to a keyword. This tag contains the time stamp key
+		// that we need to match to the data that follows
 		int oldIndexForLeftPostTemp = 0;
 		int oldIndexForRightPostTemp = 0;
 		int nextOldIndexForLeftPostTemp = 0;
@@ -310,17 +303,27 @@ class XMLParser
 		String toAddToPulledLines = " ";
 		System.out.println(endOfDocument + " " + indexForLeftPre + " " + indexForRightPre + " " + indexForLeftPost + " " + indexForRightPost);
 		
+		//The loop continues until the end of the document is reached
 		while(indexForRightPost != endOfDocument)
 		{
+			//Whenever there is space between 2 tags we pull that line to add to our arraylist of strings
 			if(indexForRightPre != (indexForLeftPost - 1))
 			{
 				toAddToPulledLines = xml.substring(indexForRightPre + 1, indexForLeftPost);
-				//System.out.println(toAddToPulledLines);
+				
+				
+				if(toAddToPulledLines.trim().isEmpty() != true)
+				{
+					//System.out.println(toAddToPulledLines);
+					pulledLines.add(toAddToPulledLines);
+				}
 
-				pulledLines.add(toAddToPulledLines);
+				
+				
+				// This for loop searches for keywords that we need to pull the previous tag on.
 				for(int y = 0; y < keywords.length; y++)
 				{
-					if((keywords[y].equals(toAddToPulledLines)) == true)
+					if((keywords[y].equalsIgnoreCase(toAddToPulledLines)) == true)
 					{
 						//System.out.println(keywords[y].equals(toAddToPulledLines));
 						pulledLines.add(xml.substring(nextNextOldIndexForLeftPostTemp, nextNextOldIndexForRightPostTemp));
@@ -329,6 +332,8 @@ class XMLParser
 					}
 				}
 			}
+			
+			//Logic to set the next set of indexes
 			nextNextOldIndexForLeftPostTemp = nextOldIndexForLeftPostTemp;
 			nextNextOldIndexForRightPostTemp = nextOldIndexForRightPostTemp;
 			nextOldIndexForLeftPostTemp = oldIndexForLeftPostTemp;
@@ -344,7 +349,157 @@ class XMLParser
 			//System.out.println(endOfDocument + " " + indexForLeftPre + " " + indexForRightPre + " " + indexForLeftPost + " " + indexForRightPost);
 		}
 		
+		int pulledLinesIndex = 0;
+		int pulledLinesSize = pulledLines.size();
+		ArrayList<ArrayList> dataTimeStamps = new ArrayList();
+		ArrayList<ArrayList> dataWeather = new ArrayList();
 		
+		//This while loop creates two arrayList containing arrayLists of Strings
+		//dataTimeStamps contain the arraylists with the time stamp key in the first string of the arraylist and all the relevant timestamps that follow
+		//dataWeather is similar with the first string being the name of the data contained, the second string being the timestamp key
+		// and all the relevant data we are trying to collect follows.
+		while(pulledLinesIndex < pulledLinesSize)
+		{
+			String toSort = pulledLines.get(pulledLinesIndex);
+			pulledLinesIndex++;
+			//System.out.println(toSort);
+			// Test if this is a timestamp key
+			//first if statement is for error checking
+			if(toSort.length() > 2)
+			{
+				// This if line tests to see if the block of data is one of the keywords types that we are looking for
+				if((toSort.equalsIgnoreCase(keywords[0]) == true) || (toSort.equalsIgnoreCase(keywords[1]) == true) || (toSort.equalsIgnoreCase(keywords[2]) == true) || (toSort.equalsIgnoreCase(keywords[3]) == true) || (toSort.equalsIgnoreCase(keywords[4]) == true) || (toSort.equalsIgnoreCase(keywords[5]) == true) || (toSort.equalsIgnoreCase(keywords[6]) == true))
+				{
+					ArrayList<String> dataWeatherTemp = new ArrayList();
+					
+					//keyword is added
+					dataWeatherTemp.add(toSort);
+					//System.out.println(toSort);
+					
+					toSort = pulledLines.get(pulledLinesIndex);
+					pulledLinesIndex++;
+					
+					//timestamp key is pulled from the line and added
+					dataWeatherTemp.add(toSort.substring(toSort.indexOf("k-"), toSort.length() - 2));
+					//System.out.println(toSort.substring(toSort.indexOf("k-"), toSort.length() - 2));
+					
+					toSort = pulledLines.get(pulledLinesIndex);
+					pulledLinesIndex++;
+					//This while loop takes each of the lines of data and adds it to the temporty arraylist
+					while(toSort.length() < 8)
+					{
+						dataWeatherTemp.add(toSort);
+						toSort = pulledLines.get(pulledLinesIndex);
+						pulledLinesIndex++;
+						
+						//System.out.println(toSort + "here");
+					}
+					// The temp arraylist is added to the arraylist of arraylist dataWeather
+					pulledLinesIndex--;
+					dataWeather.add(dataWeatherTemp);
+				}
+				//else if statement for checking for timestamps which always start with k-
+				else if((toSort.charAt(0) == 'k') && (toSort.charAt(1) == '-'))
+				{
+					//Add timestamp key and then following timestamps to a String arraylist
+					ArrayList<String> timeStampTemp = new ArrayList();
+					//Temp arraylist to be added after the while loop completes
+					timeStampTemp.add(toSort);
+					//While loop goes through each of the timestamps and adds them to the temporary arraylist
+					while(toSort.length() < 8 || (toSort.equals("Daily Maximum Temperature") != true))
+					{
+						toSort = pulledLines.get(pulledLinesIndex);
+						timeStampTemp.add(toSort);
+						pulledLinesIndex++;
+					}
+					// the temporary arraylist is added to the arraylist of arraylist dataTimeStamps
+					dataTimeStamps.add(timeStampTemp);
+				}
+				
+			}
+		}
 		
+		//Now we need to construct objects for each hour to be added to the database
+		//64 hours are set for each parsed document
+		
+		ArrayList temp = dataWeather.get(0);
+		String parameterName = (String) temp.get(0);
+		String parameterKey = (String) temp.get(1);
+		//System.out.println(parameterName + " " + parameterKey);
+		
+		//First for loop initialilzes the hourPrediction objects with the first dataWeather arraylist
+		hourPrediction[] prediction = new hourPrediction[temp.size()-2];
+		for(int z = 2; z < temp.size(); z++)
+		{
+			//System.out.println(temp.get(z));
+			prediction[z-2](toParse[1], //todo )
+		}
+		
+		for(int a = 1; a < dataWeather.size(); a++)
+		{
+
+		}
+	}
+}
+
+class hourPrediction
+{
+	private int zipcode;
+	private String timeApplicable;
+	private Timestamp lastUpdated;
+	private int temperature;
+	private double liquidPrecip;
+	private int windSpeed;
+	private double iceAccum;
+	private double snowAmount;
+	private int gustSpeeds;
+	private int humidity;
+	
+	public void hourPrediction(String zip, String timeApp)
+	{
+		zipcode = Integer.parseInt(zip);
+		timeApplicable = timeApp;
+	}
+	
+	private void updateTime()
+	{
+		Calendar calendar = Calendar.getInstance();
+		Timestamp currentTimestamp = new Timestamp(calendar.getTime().getTime());
+		lastUpdated = currentTimestamp;
+	}
+	
+	public void setTemperature(String temp)
+	{
+		temperature = Integer.parseInt(temp);
+	}
+	
+	public void setWindSpeed(String wind)
+	{
+		windSpeed = Integer.parseInt(wind);
+	}
+	
+	public void setPrecip(String precip)
+	{
+		liquidPrecip = Double.parseDouble(precip);
+	}
+	
+	public void setIce(String ice)
+	{
+		iceAccum = Double.parseDouble(ice);
+	}
+	
+	public void setSnow(String snow)
+	{
+		snowAmount = Double.parseDouble(snow);
+	}
+	
+	public void setGust(String gust)
+	{
+		gustSpeeds = Integer.parseInt(gust);
+	}
+	
+	public void setHumidity(String humid)
+	{
+		humidity = Integer.parseInt(humid);
 	}
 }
