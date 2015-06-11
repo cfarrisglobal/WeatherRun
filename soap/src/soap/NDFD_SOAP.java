@@ -9,6 +9,10 @@ import javax.xml.namespace.QName;
 
 
 
+
+
+
+
 import java.io.*;
 import java.net.URL;
 import java.sql.Timestamp;
@@ -353,6 +357,7 @@ class XMLParser
 		int pulledLinesSize = pulledLines.size();
 		ArrayList<ArrayList> dataTimeStamps = new ArrayList();
 		ArrayList<ArrayList> dataWeather = new ArrayList();
+		boolean isPassed = false;
 		
 		//This while loop creates two arrayList containing arrayLists of Strings
 		//dataTimeStamps contain the arraylists with the time stamp key in the first string of the arraylist and all the relevant timestamps that follow
@@ -380,7 +385,7 @@ class XMLParser
 					pulledLinesIndex++;
 					
 					//timestamp key is pulled from the line and added
-					dataWeatherTemp.add(toSort.substring(toSort.indexOf("k-"), toSort.length() - 2));
+					dataWeatherTemp.add(toSort.substring(toSort.indexOf("k-"), toSort.length() - 1));
 					//System.out.println(toSort.substring(toSort.indexOf("k-"), toSort.length() - 2));
 					
 					toSort = pulledLines.get(pulledLinesIndex);
@@ -399,17 +404,22 @@ class XMLParser
 					dataWeather.add(dataWeatherTemp);
 				}
 				//else if statement for checking for timestamps which always start with k-
-				else if((toSort.charAt(0) == 'k') && (toSort.charAt(1) == '-'))
+				else if((toSort.charAt(0) == 'k') && (toSort.charAt(1) == '-') && isPassed == false)
 				{
 					//Add timestamp key and then following timestamps to a String arraylist
 					ArrayList<String> timeStampTemp = new ArrayList();
 					//Temp arraylist to be added after the while loop completes
 					timeStampTemp.add(toSort);
+					//System.out.println(toSort);
+					toSort = pulledLines.get(pulledLinesIndex);
+					pulledLinesIndex++;
 					//While loop goes through each of the timestamps and adds them to the temporary arraylist
-					while(toSort.length() < 8 || (toSort.equals("Daily Maximum Temperature") != true))
+					while(((toSort.charAt(0) != 'k') && (toSort.charAt(1) != '-')) && (toSort.equalsIgnoreCase("Daily Maximum Temperature") == false))
 					{
-						toSort = pulledLines.get(pulledLinesIndex);
+						
 						timeStampTemp.add(toSort);
+						//System.out.println(toSort);
+						toSort = pulledLines.get(pulledLinesIndex);
 						pulledLinesIndex++;
 					}
 					// the temporary arraylist is added to the arraylist of arraylist dataTimeStamps
@@ -422,22 +432,295 @@ class XMLParser
 		//Now we need to construct objects for each hour to be added to the database
 		//64 hours are set for each parsed document
 		
-		ArrayList temp = dataWeather.get(0);
-		String parameterName = (String) temp.get(0);
-		String parameterKey = (String) temp.get(1);
+		//tempParameter holds one of the data types that we are looking to store in the case of dataWeather.get(0) it is temperature
+		ArrayList tempParameter = dataWeather.get(0);
+		//parameterName should just be "Temperature"
+		String parameterName = (String) tempParameter.get(0);
+		//dataTimeKey is the timestamp key that pertains to the parameter temperature
+		String dataTimeKey = (String) tempParameter.get(1);
 		//System.out.println(parameterName + " " + parameterKey);
 		
-		//First for loop initialilzes the hourPrediction objects with the first dataWeather arraylist
-		hourPrediction[] prediction = new hourPrediction[temp.size()-2];
-		for(int z = 2; z < temp.size(); z++)
+		//prediction is an array of objects that we are attempting to sort all of the parameters into for each hours prediction
+		hourPrediction[] prediction = new hourPrediction[tempParameter.size()-2];
+
+		// pulledFromDataTimeStamps is the first arraylist of timestamps stored in dataTimeStamps arraylist of arraylists
+		// its initialized here for reasons but later the same data is initialized in the for loop
+		ArrayList pulledFromDataTimeStamps = dataTimeStamps.get(0);
+		//System.out.println(dataTimeStamps.size());
+		
+		// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
+		int relevantTimeData = 0;
+		
+		//goal of this for loop is to find the index of the matching timestamp keys between the arraylists of timestamps and
+		//the parameters stored key
+		for(int b = 0; b < dataTimeStamps.size(); b++)
 		{
-			//System.out.println(temp.get(z));
-			prediction[z-2](toParse[1], //todo )
+			pulledFromDataTimeStamps = dataTimeStamps.get(b);
+			String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
+			//System.out.println(dataTimeKey + " " + timeStampTest);
+			if(timeStampTest.equals(dataTimeKey))
+			{
+				//System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
+				relevantTimeData = b;
+				break;
+				
+			}
+		}
+		//System.out.println("relevantTimeData: " + relevantTimeData);
+		
+		ArrayList masterTimeStamp = dataTimeStamps.get(relevantTimeData);
+		//System.out.println("tempTimeStamp length: " + tempTimeStamp.size());
+		
+		//The follow sets temperature
+		for(int z = 2; z < tempParameter.size(); z++)
+		{
+			System.out.println(tempParameter.get(z));
+			System.out.println(masterTimeStamp.get(z-1));
+			String predictionTimeStamp = (String) masterTimeStamp.get(z-1);
+			prediction[z-2] = new hourPrediction(toParse[1], predictionTimeStamp);
+			prediction[z-2].setTemperature((String) tempParameter.get(z)); 
 		}
 		
-		for(int a = 1; a < dataWeather.size(); a++)
-		{
 
+		
+		//The following sets liquid precipitation amount
+		tempParameter = dataWeather.get(1);
+		parameterName = (String) tempParameter.get(0);
+		//System.out.println(parameterName + " " + parameterKey);
+		dataTimeKey = (String) tempParameter.get(1);
+		pulledFromDataTimeStamps = dataTimeStamps.get(0);
+		//System.out.println(dataTimeStamps.size());
+		relevantTimeData = 0;
+		for(int b = 0; b < dataTimeStamps.size(); b++)
+		{
+			pulledFromDataTimeStamps = dataTimeStamps.get(b);
+			String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
+			//System.out.println(dataTimeKey + " " + timeStampTest);
+			if(timeStampTest.equals(dataTimeKey))
+			{
+				//System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
+				relevantTimeData = b;
+				break;
+				
+			}
+		}
+		// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
+
+		// The offset of the current timestamp arraylist that we are looking at against the masterTimeStamps arraylist
+		// that we used to create the objects with
+		int offSetFromMaster = 0;
+		for(int a = 1; a < pulledFromDataTimeStamps.size(); a++)
+		{
+			if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a)))
+			{
+				offSetFromMaster = a - 1;
+				System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a));
+				break;
+			}
+		}
+		
+		//Now that we know the offset we can set precipitation amount
+		for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++)
+		{
+			prediction[c].setPrecip((String) tempParameter.get(c)); 
+		}
+		
+		//The following sets wind speed
+		tempParameter = dataWeather.get(2);
+		parameterName = (String) tempParameter.get(0);
+		//System.out.println(parameterName + " " + parameterKey);
+		dataTimeKey = (String) tempParameter.get(1);
+		pulledFromDataTimeStamps = dataTimeStamps.get(0);
+		//System.out.println(dataTimeStamps.size());
+		relevantTimeData = 0;
+		for(int b = 0; b < dataTimeStamps.size(); b++)
+		{
+			pulledFromDataTimeStamps = dataTimeStamps.get(b);
+			String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
+			//System.out.println(dataTimeKey + " " + timeStampTest);
+			if(timeStampTest.equals(dataTimeKey))
+			{
+				//System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
+				relevantTimeData = b;
+				break;
+				
+			}
+		}
+		// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
+
+		// The offset of the current timestamp arraylist that we are looking at against the masterTimeStamps arraylist
+		// that we used to create the objects with
+		offSetFromMaster = 0;
+		for(int a = 1; a < pulledFromDataTimeStamps.size(); a++)
+		{
+			if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a)))
+			{
+				offSetFromMaster = a - 1;
+				System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a));
+				break;
+			}
+		}
+		
+		//Now that we know the offset we can set wind amount 
+		for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++)
+		{
+			prediction[c-2].setWindSpeed((String) tempParameter.get(c)); 
+		}
+		
+		//The following sets Ice accumulation
+		tempParameter = dataWeather.get(3);
+		parameterName = (String) tempParameter.get(0);
+		//System.out.println(parameterName + " " + parameterKey);
+		dataTimeKey = (String) tempParameter.get(1);
+		pulledFromDataTimeStamps = dataTimeStamps.get(0);
+		//System.out.println(dataTimeStamps.size());
+		relevantTimeData = 0;
+		for(int b = 0; b < dataTimeStamps.size(); b++)
+		{
+			pulledFromDataTimeStamps = dataTimeStamps.get(b);
+			String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
+			//System.out.println(dataTimeKey + " " + timeStampTest);
+			if(timeStampTest.equals(dataTimeKey))
+			{
+				//System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
+				relevantTimeData = b;
+				break;
+				
+			}
+		}
+		// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
+
+		// The offset of the current timestamp arraylist that we are looking at against the masterTimeStamps arraylist
+		// that we used to create the objects with
+		offSetFromMaster = 0;
+		for(int a = 1; a < pulledFromDataTimeStamps.size(); a++)
+		{
+			if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a)))
+			{
+				offSetFromMaster = a - 1;
+				System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a));
+				break;
+			}
+		}
+		
+		//Now that we know the offset we can set wind amount 
+		int overallIceCount = 0;
+		for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++)
+		{
+			for(int d = 0; d < 6; d++)
+			{
+				if(overallIceCount >= 65)
+				{
+					break;
+				}
+				prediction[(c-2)*6 + d].setIce((String) tempParameter.get(c)); 
+				overallIceCount++;
+			}
+			
+		}
+		
+		//The following sets snow amount
+		tempParameter = dataWeather.get(4);
+		parameterName = (String) tempParameter.get(0);
+		//System.out.println(parameterName + " " + parameterKey);
+		dataTimeKey = (String) tempParameter.get(1);
+		pulledFromDataTimeStamps = dataTimeStamps.get(0);
+		//System.out.println(dataTimeStamps.size());
+		relevantTimeData = 0;
+		for(int b = 0; b < dataTimeStamps.size(); b++)
+		{
+			pulledFromDataTimeStamps = dataTimeStamps.get(b);
+			String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
+			//System.out.println(dataTimeKey + " " + timeStampTest);
+			if(timeStampTest.equals(dataTimeKey))
+			{
+				//System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
+				relevantTimeData = b;
+				break;
+				
+			}
+		}
+		// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
+
+		// The offset of the current timestamp arraylist that we are looking at against the masterTimeStamps arraylist
+		// that we used to create the objects with
+		offSetFromMaster = 0;
+		for(int a = 1; a < pulledFromDataTimeStamps.size(); a++)
+		{
+			if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a)))
+			{
+				offSetFromMaster = a - 1;
+				System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a));
+				break;
+			}
+		}
+		
+		//Now that we know the offset we can set wind amount 
+		int overallSnowCount = 0;
+		for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++)
+		{
+			for(int d = 0; d < 6; d++)
+			{
+				if(overallIceCount >= 65)
+				{
+					break;
+				}
+				prediction[(c-2)*6 + d].setSnow((String) tempParameter.get(c)); 
+				overallIceCount++;
+			}
+			
+		}
+		
+		//The following sets Wind Gust Speed
+		tempParameter = dataWeather.get(5);
+		parameterName = (String) tempParameter.get(0);
+		//System.out.println(parameterName + " " + parameterKey);
+		dataTimeKey = (String) tempParameter.get(1);
+		pulledFromDataTimeStamps = dataTimeStamps.get(0);
+		//System.out.println(dataTimeStamps.size());
+		relevantTimeData = 0;
+		for(int b = 0; b < dataTimeStamps.size(); b++)
+		{
+			pulledFromDataTimeStamps = dataTimeStamps.get(b);
+			String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
+			//System.out.println(dataTimeKey + " " + timeStampTest);
+			if(timeStampTest.equals(dataTimeKey))
+			{
+				//System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
+				relevantTimeData = b;
+				break;
+				
+			}
+		}
+		// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
+
+		// The offset of the current timestamp arraylist that we are looking at against the masterTimeStamps arraylist
+		// that we used to create the objects with
+		offSetFromMaster = 0;
+		for(int a = 1; a < pulledFromDataTimeStamps.size(); a++)
+		{
+			if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a)))
+			{
+				offSetFromMaster = a - 1;
+				System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a));
+				break;
+			}
+		}
+		
+		//Now that we know the offset we can set wind amount 
+		int overallGustCount = 0;
+		for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++)
+		{
+			for(int d = 0; d < 3; d++)
+			{
+				if(overallIceCount >= 65)
+				{
+					break;
+				}
+				prediction[(c-2)*6 + d].setGust((String) tempParameter.get(c)); 
+				overallIceCount++;
+			}
+			
 		}
 	}
 }
@@ -455,10 +738,12 @@ class hourPrediction
 	private int gustSpeeds;
 	private int humidity;
 	
-	public void hourPrediction(String zip, String timeApp)
+
+	public hourPrediction(String zip, String timeApp)
 	{
 		zipcode = Integer.parseInt(zip);
 		timeApplicable = timeApp;
+		//System.out.println("Created hourPrediciton with zip: " + zip + " and timeStamp " + timeApp);
 	}
 	
 	private void updateTime()
@@ -476,26 +761,31 @@ class hourPrediction
 	public void setWindSpeed(String wind)
 	{
 		windSpeed = Integer.parseInt(wind);
+		//System.out.println("Set wind speed: " + wind);
 	}
 	
 	public void setPrecip(String precip)
 	{
 		liquidPrecip = Double.parseDouble(precip);
+		//System.out.println("Set precip: " + precip);
 	}
 	
 	public void setIce(String ice)
 	{
 		iceAccum = Double.parseDouble(ice);
+		//System.out.println("Set ice: " + ice);
 	}
 	
 	public void setSnow(String snow)
 	{
 		snowAmount = Double.parseDouble(snow);
+		System.out.println("Set snow: " + snow);
 	}
 	
 	public void setGust(String gust)
 	{
 		gustSpeeds = Integer.parseInt(gust);
+		System.out.println("Set gust: " + gust);
 	}
 	
 	public void setHumidity(String humid)
