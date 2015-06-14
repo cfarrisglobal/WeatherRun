@@ -13,12 +13,21 @@ import javax.xml.namespace.QName;
 
 
 
+
 import java.io.*;
 import java.net.URL;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class NDFD_SOAP
 {
@@ -26,14 +35,13 @@ public class NDFD_SOAP
 	{
 		
 		//Put all valid zip codes stored in txt file into arraylist
-		XMLParser originalXMLParser = new XMLParser();
 		ArrayList<String[]> Zips = new ArrayList();
 		Zips = getZips();
 		
-		weatherRequest[] threadArray = new weatherRequest[5];
+		weatherRequest[] threadArray = new weatherRequest[2];
 		for(int x = 0; x < threadArray.length; x++)
 		{
-			threadArray[x] = new weatherRequest(Integer.toString(x), Zips, originalXMLParser);
+			threadArray[x] = new weatherRequest(Integer.toString(x), Zips);
 			threadArray[x].start();
 			try {
 				TimeUnit.MILLISECONDS.sleep(50);
@@ -95,11 +103,13 @@ class weatherRequest implements Runnable
 	static ArrayList<String[]> failedSOAPRequest = new ArrayList();
 	private Thread t;
 	private String threadName;
-	static boolean printStuff = false;
-	private XMLParser parser; 
-	public weatherRequest(String name, ArrayList<String[]> Zipsx, XMLParser passedParser)
+	private static boolean printStuff = false;
+	private static ArrayList<hourPrediction> masterHourPrediction;
+	private static int masterHourPredictionIndex = 0;
+	private static int hourPredictionsSinceLastInsert = 0;
+	
+	public weatherRequest(String name, ArrayList<String[]> Zipsx)
 	{
-		parser = passedParser;
 		threadName = name;
 		System.out.println("Creating " + threadName);
 		if(zipsSet == false)
@@ -118,12 +128,11 @@ class weatherRequest implements Runnable
 			incrementCount();
 			SOAPRequest(fetchZip);
 		}
-		
-		
 	}
 	
 	public void start()
 	{
+		masterHourPrediction = new ArrayList();
 		System.out.println("Starting " + threadName);
 		if(t == null)
 		{
@@ -245,44 +254,153 @@ class weatherRequest implements Runnable
 			ex.printStackTrace();
 		}
 		
-		parser.putXMLResponse(response, zip, coordinates);
+		putXMLResponse(response, zip, coordinates);
 	}
-}
 
-class XMLParser
-{
-	private static ArrayList<String[]> XMLDocuments = new ArrayList();
-	
-	public void XMLParser()
-	{
-		
-	}
-	
-	public void start() throws Exception
-	{
-		while(XMLDocuments.isEmpty())
-		{
-			//TimeUnit.MILLISECONDS.wait(500);
-		}
-		//
-	}
 	
 	public void putXMLResponse(String XML, String zip, String coordinates) throws Exception
 	{
 		String[] temp = new String[]{XML, zip, coordinates};
-		//XMLDocuments.add(temp);
-		parse(temp);
+		hourPrediction[] fromParse = parse(temp);
+		populateDatabase(fromParse);
 	}
 	
-	private static synchronized String[] getXMLDoc()
+	private static synchronized void populateDatabase(hourPrediction[] fromParse)
 	{
-		String[] temp = XMLDocuments.get(0);
-		XMLDocuments.remove(0);
-		return temp;
+		for(int x = 0; x < fromParse.length; x++)
+		{
+			masterHourPrediction.add(fromParse[x]);
+		}
+		if(hourPredictionsSinceLastInsert >= 1000)
+		{
+			hourPredictionsSinceLastInsert = 0;
+			//Database insert here
+			
+			Connection con = null;
+	        Statement st = null;
+	        ResultSet rs = null;
+
+	        // Current database is hosted on local development machine
+	        String url = "jdbc:mysql://localhost:3306/foo";
+	        
+	        // Local database has this user set up for access to latlon and weatherprediction tables on database foo
+	        String user = "tester";
+	        String password = "userpass";
+	        try {
+	            // The newInstance() call is a work around for some
+	            // broken Java implementations
+
+	            Class.forName("com.mysql.jdbc.Driver").newInstance();
+	        } catch (Exception ex) {
+	            // handle the error
+	        }
+	        //System.out.println("Here 3");
+	        try {
+	        	// Create Drivermanager and execute versionquery
+	            con = DriverManager.getConnection(url, user, password);
+	            st = con.createStatement();
+	            rs = st.executeQuery("SELECT VERSION()");
+
+	            // Output versionquery to check for established connection
+	            if (rs.next()) {
+	                System.out.println(rs.getString(1));
+	            }
+	            
+	            /*
+	             * The following prepared statement creates a new weatherprediction row if the zipcode and time_Applicable
+	             * do not exist in the current database. If it does exists the ON DUPLICATE KEY UPDATE activates and
+	             * everything is updated with the current data except for the key which contains the zipcode and time_applicable
+	             * 
+	             * Later we may need to test for nulls so that we are not replacing a valid data point with a null datapoint
+	             * since we are most interested in the latest data for each prediction. As time moves forward the current
+	             * time will no longer be available in the NDFD prediction data.
+	             * 
+	            */
+	            
+	            PreparedStatement pst = con.prepareStatement("INSERT INTO weatherprediction(zipcode, time_Applicable, last_Updated"
+	            		+ ", temp, liquid_Precip, wind_Speed, ice_Accum, snow_Amount, gust_Speeds, humidity) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+	            		+ "ON DUPLICATE KEY UPDATE zipcode = zipcode, time_Applicable = time_Applicable, last_Updated = ?, temp = ?,"
+	            		+ " liquid_Precip = ?, wind_Speed = ?, ice_Accum = ?, snow_Amount = ?, gust_Speeds = ?, humidity = ?;");
+	            
+	            //tempMasterhourPredictionIndex is a copy of masterHourPredictionIndex so that we can update
+	            //the number of predictions we have already added to the database
+	            
+	            int tempMasterHourPredictionIndex = 0;
+	            // We have to create a statement for each line in the zip file
+	            for(int x = 0; x < masterHourPrediction.size() - masterHourPredictionIndex; x++)
+	            {
+		            hourPrediction currentHourPrediction = masterHourPrediction.get((masterHourPredictionIndex + x));
+		            
+		            tempMasterHourPredictionIndex++;
+		            
+		            currentHourPrediction.printWeather();
+		            // setstring sets the ? values in the preparedStatement with the data from the zips arraylist
+		            pst.setInt(1, currentHourPrediction.getZip());
+		            pst.setString(2, currentHourPrediction.getTimeApplicable());
+		            pst.setString(3, currentHourPrediction.getTimeUpdated().toString());
+		            pst.setInt(4, currentHourPrediction.getTemperature());
+		            pst.setDouble(5, currentHourPrediction.getPrecip());
+		            pst.setInt(6, currentHourPrediction.getWindSpeed());
+		            pst.setDouble(7, currentHourPrediction.getIce());
+		            pst.setDouble(8, currentHourPrediction.getSnow());
+		            pst.setInt(9, currentHourPrediction.getGust());
+		            pst.setInt(10, currentHourPrediction.getHumidity());
+		            pst.setString(11, currentHourPrediction.getTimeUpdated().toString());
+		            pst.setInt(12, currentHourPrediction.getTemperature());
+		            pst.setDouble(13, currentHourPrediction.getPrecip());
+		            pst.setInt(14, currentHourPrediction.getWindSpeed());
+		            pst.setDouble(15, currentHourPrediction.getIce());
+		            pst.setDouble(16, currentHourPrediction.getSnow());
+		            pst.setInt(17, currentHourPrediction.getGust());
+		            pst.setInt(18, currentHourPrediction.getHumidity());
+		            
+		            // we add each statement to a batch that is later executed
+		            pst.addBatch();
+		            
+		            System.out.println(x + " masterHourPrediction: " + masterHourPrediction.size() + " masterHourPredictionIndex: " + masterHourPredictionIndex);
+		            
+		            // 
+		            if( x >= masterHourPrediction.size() - masterHourPredictionIndex - 1)
+		            {
+			            pst.executeBatch();
+			            System.out.println("Executed " + x + " rows");
+			            masterHourPredictionIndex += tempMasterHourPredictionIndex;
+		            }
+		            
+	            }
+	            
+	        } catch (SQLException ex) {
+	            Logger lgr = Logger.getLogger(populateLatLon.class.getName());
+	            lgr.log(Level.SEVERE, ex.getMessage(), ex);
+
+	        } finally {
+	            try {
+	                if (rs != null) {
+	                    rs.close();
+	                }
+	                if (st != null) {
+	                    st.close();
+	                }
+	                if (con != null) {
+	                    con.close();
+	                }
+
+	            } catch (SQLException ex) {
+	                Logger lgr = Logger.getLogger(populateLatLon.class.getName());
+	                lgr.log(Level.WARNING, ex.getMessage(), ex);
+	            }
+		
+	        }
+		}
+		else
+		{
+			hourPredictionsSinceLastInsert += fromParse.length;
+		}
 	}
 	
-	private void parse(String[] parseThis) throws Exception
+	private hourPrediction[] parse(String[] parseThis) throws Exception
 	{
+		hourPrediction[] prediction = null;
 		
 		try {
 			//Attempt 2 at creating a decent parse
@@ -444,7 +562,7 @@ class XMLParser
 			//System.out.println(parameterName + " " + parameterKey);
 			
 			//prediction is an array of objects that we are attempting to sort all of the parameters into for each hours prediction
-			hourPrediction[] prediction = new hourPrediction[tempParameter.size()-2];
+			prediction = new hourPrediction[tempParameter.size()-2];
 	
 			// pulledFromDataTimeStamps is the first arraylist of timestamps stored in dataTimeStamps arraylist of arraylists
 			// its initialized here for reasons but later the same data is initialized in the for loop
@@ -573,166 +691,13 @@ class XMLParser
 			parameterName = (String) tempParameter.get(0);
 			dataTimeKey = (String) tempParameter.get(1);
 			pulledFromDataTimeStamps = dataTimeStamps.get(0);
-			System.out.println(dataTimeStamps.size());
+			//System.out.println(dataTimeStamps.size());
 			relevantTimeData = 0;
 			for(int b = 0; b < dataTimeStamps.size(); b++)
 			{
 				pulledFromDataTimeStamps = dataTimeStamps.get(b);
 				String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
-				System.out.println(dataTimeKey + " " + timeStampTest);
-				if(timeStampTest.equals(dataTimeKey))
-				{
-					System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
-					relevantTimeData = b;
-					break;
-					
-				}
-			}
-			// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
-	
-			// The offset of the current timestamp arraylist that we are looking at against the masterTimeStamps arraylist
-			// that we used to create the objects with
-			offSetFromMaster = 0;
-			for(int a = 1; a < pulledFromDataTimeStamps.size(); a++)
-			{
-				if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a)))
-				{
-					offSetFromMaster = a - 1;
-					System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a) + " " + parameterName);
-					break;
-				}
-			}
-			
-			//Now that we know the offset we can set wind amount 
-			int overallIceCount = 0;
-			for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++)
-			{
-				for(int d = 0; d < 6; d++)
-				{
-					if(overallIceCount >= 64)
-					{
-						break;
-					}
-					prediction[(c-2)*6 + d].setIce((String) tempParameter.get(c)); 
-					overallIceCount++;
-				}
-				
-			}
-			
-			//The following sets snow amount
-			tempParameter = dataWeather.get(4);
-			parameterName = (String) tempParameter.get(0);
-			dataTimeKey = (String) tempParameter.get(1);
-			pulledFromDataTimeStamps = dataTimeStamps.get(0);
-			System.out.println(dataTimeStamps.size());
-			relevantTimeData = 0;
-			for(int b = 0; b < dataTimeStamps.size(); b++)
-			{
-				pulledFromDataTimeStamps = dataTimeStamps.get(b);
-				String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
-				System.out.println(dataTimeKey + " " + timeStampTest);
-				if(timeStampTest.equals(dataTimeKey))
-				{
-					System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
-					relevantTimeData = b;
-					break;
-					
-				}
-			}
-			// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
-	
-			// The offset of the current timestamp arraylist that we are looking at against the masterTimeStamps arraylist
-			// that we used to create the objects with
-			offSetFromMaster = 0;
-			for(int a = 1; a < pulledFromDataTimeStamps.size(); a++)
-			{
-				if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a)))
-				{
-					offSetFromMaster = a - 1;
-					System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a) + " " + parameterName);
-					break;
-				}
-			}
-			
-			//Now that we know the offset we can set wind amount 
-			int overallSnowCount = 0;
-			for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++)
-			{
-				for(int d = 0; d < 6; d++)
-				{
-					if(overallSnowCount >= 64)
-					{
-						break;
-					}
-					prediction[(c-2)*6 + d].setSnow((String) tempParameter.get(c)); 
-					overallSnowCount++;
-				}
-				
-			}
-			
-			//The following sets Wind Gust Speed
-			tempParameter = dataWeather.get(5);
-			parameterName = (String) tempParameter.get(0);
-			dataTimeKey = (String) tempParameter.get(1);
-			pulledFromDataTimeStamps = dataTimeStamps.get(0);
-			System.out.println(dataTimeStamps.size());
-			relevantTimeData = 0;
-			for(int b = 0; b < dataTimeStamps.size(); b++)
-			{
-				pulledFromDataTimeStamps = dataTimeStamps.get(b);
-				String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
-				System.out.println(dataTimeKey + " " + timeStampTest);
-				if(timeStampTest.equals(dataTimeKey))
-				{
-					System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
-					relevantTimeData = b;
-					break;
-					
-				}
-			}
-			// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
-	
-			// The offset of the current timestamp arraylist that we are looking at against the masterTimeStamps arraylist
-			// that we used to create the objects with
-			offSetFromMaster = 0;
-			for(int a = 1; a < pulledFromDataTimeStamps.size(); a++)
-			{
-				if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a)))
-				{
-					offSetFromMaster = a - 1;
-					System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a) + " " + parameterName);
-					break;
-				}
-			}
-			
-			//Now that we know the offset we can set wind amount 
-			int overallGustCount = 0;
-			for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++)
-			{
-				for(int d = 0; d < 3; d++)
-				{
-					if(overallGustCount >= 64)
-					{
-						break;
-					}
-					prediction[(c-2)*3 + d].setGust((String) tempParameter.get(c)); 
-					overallGustCount++;
-				}
-				
-			}
-			
-			//The following sets Humidity
-			tempParameter = dataWeather.get(6);
-			parameterName = (String) tempParameter.get(0);
-			dataTimeKey = (String) tempParameter.get(1);
-			pulledFromDataTimeStamps = dataTimeStamps.get(0);
-			System.out.println(dataTimeStamps.size());
-			relevantTimeData = 0;
-			for(int b = 0; b < dataTimeStamps.size(); b++)
-			{
-				pulledFromDataTimeStamps = dataTimeStamps.get(b);
-				String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
-				System.out.println(dataTimeKey + " " + timeStampTest);
+				//System.out.println(dataTimeKey + " " + timeStampTest);
 				if(timeStampTest.equals(dataTimeKey))
 				{
 					//System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
@@ -751,7 +716,160 @@ class XMLParser
 				if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a)))
 				{
 					offSetFromMaster = a - 1;
-					System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a) + " " + parameterName);
+					//System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a) + " " + parameterName);
+					break;
+				}
+			}
+			
+			//Now that we know the offset we can set wind amount 
+			int overallIceCount = 0;
+			for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++)
+			{
+				for(int d = 0; d < 6; d++)
+				{
+					if(overallIceCount >= prediction.length)
+					{
+						break;
+					}
+					prediction[(c-2)*6 + d].setIce((String) tempParameter.get(c)); 
+					overallIceCount++;
+				}
+				
+			}
+			
+			//The following sets snow amount
+			tempParameter = dataWeather.get(4);
+			parameterName = (String) tempParameter.get(0);
+			dataTimeKey = (String) tempParameter.get(1);
+			pulledFromDataTimeStamps = dataTimeStamps.get(0);
+			//System.out.println(dataTimeStamps.size());
+			relevantTimeData = 0;
+			for(int b = 0; b < dataTimeStamps.size(); b++)
+			{
+				pulledFromDataTimeStamps = dataTimeStamps.get(b);
+				String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
+				//System.out.println(dataTimeKey + " " + timeStampTest);
+				if(timeStampTest.equals(dataTimeKey))
+				{
+					//System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
+					relevantTimeData = b;
+					break;
+					
+				}
+			}
+			// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
+	
+			// The offset of the current timestamp arraylist that we are looking at against the masterTimeStamps arraylist
+			// that we used to create the objects with
+			offSetFromMaster = 0;
+			for(int a = 1; a < pulledFromDataTimeStamps.size(); a++)
+			{
+				if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a)))
+				{
+					offSetFromMaster = a - 1;
+					//System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a) + " " + parameterName);
+					break;
+				}
+			}
+			
+			//Now that we know the offset we can set wind amount 
+			int overallSnowCount = 0;
+			for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++)
+			{
+				for(int d = 0; d < 6; d++)
+				{
+					if(overallSnowCount >= prediction.length)
+					{
+						break;
+					}
+					prediction[(c-2)*6 + d].setSnow((String) tempParameter.get(c)); 
+					overallSnowCount++;
+				}
+				
+			}
+			
+			//The following sets Wind Gust Speed
+			tempParameter = dataWeather.get(5);
+			parameterName = (String) tempParameter.get(0);
+			dataTimeKey = (String) tempParameter.get(1);
+			pulledFromDataTimeStamps = dataTimeStamps.get(0);
+			//System.out.println(dataTimeStamps.size());
+			relevantTimeData = 0;
+			for(int b = 0; b < dataTimeStamps.size(); b++)
+			{
+				pulledFromDataTimeStamps = dataTimeStamps.get(b);
+				String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
+				//System.out.println(dataTimeKey + " " + timeStampTest);
+				if(timeStampTest.equals(dataTimeKey))
+				{
+					//System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
+					relevantTimeData = b;
+					break;
+					
+				}
+			}
+			// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
+	
+			// The offset of the current timestamp arraylist that we are looking at against the masterTimeStamps arraylist
+			// that we used to create the objects with
+			offSetFromMaster = 0;
+			for(int a = 1; a < pulledFromDataTimeStamps.size(); a++)
+			{
+				if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a)))
+				{
+					offSetFromMaster = a - 1;
+					//System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a) + " " + parameterName);
+					break;
+				}
+			}
+			
+			//Now that we know the offset we can set wind amount 
+			int overallGustCount = 0;
+			for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++)
+			{
+				for(int d = 0; d < 3; d++)
+				{
+					if(overallGustCount >= prediction.length)
+					{
+						break;
+					}
+					prediction[(c-2)*3 + d].setGust((String) tempParameter.get(c)); 
+					overallGustCount++;
+				}
+				
+			}
+			
+			//The following sets Humidity
+			tempParameter = dataWeather.get(6);
+			parameterName = (String) tempParameter.get(0);
+			dataTimeKey = (String) tempParameter.get(1);
+			pulledFromDataTimeStamps = dataTimeStamps.get(0);
+			//System.out.println(dataTimeStamps.size());
+			relevantTimeData = 0;
+			for(int b = 0; b < dataTimeStamps.size(); b++)
+			{
+				pulledFromDataTimeStamps = dataTimeStamps.get(b);
+				String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
+				//System.out.println(dataTimeKey + " " + timeStampTest);
+				if(timeStampTest.equals(dataTimeKey))
+				{
+					//System.out.println(dataTimeKey + " " + timeStampTest + " " + "success");
+					relevantTimeData = b;
+					break;
+					
+				}
+			}
+			// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
+	
+			// The offset of the current timestamp arraylist that we are looking at against the masterTimeStamps arraylist
+			// that we used to create the objects with
+			offSetFromMaster = 0;
+			for(int a = 1; a < pulledFromDataTimeStamps.size(); a++)
+			{
+				if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a)))
+				{
+					offSetFromMaster = a - 1;
+					//System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a) + " " + parameterName);
 					break;
 				}
 			}
@@ -762,7 +880,7 @@ class XMLParser
 			{
 				for(int d = 0; d < 3; d++)
 				{
-					if(overallHumCount >= 64)
+					if(overallHumCount >= prediction.length)
 					{
 						break;
 					}
@@ -772,9 +890,11 @@ class XMLParser
 				
 			}
 		}catch (Exception e) {
-      	  System.out.println("What the fuck is happening : " + e.getMessage());
-      	  System.out.println(Thread.currentThread().getStackTrace()[2].getLineNumber());
+      	  //System.out.println("What the fuck is happening : " + e.getMessage());
+      	  //System.out.println(Thread.currentThread().getStackTrace()[2].getLineNumber());
       }
+		
+		return prediction;
 		
 	}
 }
@@ -797,6 +917,7 @@ class hourPrediction
 	{
 		zipcode = Integer.parseInt(zip);
 		timeApplicable = timeApp;
+		updateTime();
 		//System.out.println("Created hourPrediciton with zip: " + zip + " and timeStamp " + timeApp);
 	}
 	
@@ -846,5 +967,63 @@ class hourPrediction
 	{
 		humidity = Integer.parseInt(humid);
 		//System.out.println("Set humidity: " + humid);
+	}
+	
+	public String getTimeApplicable()
+	{
+		return timeApplicable;
+	}
+	
+	public Timestamp getTimeUpdated()
+	{
+		return lastUpdated;
+	}
+	
+	public int getTemperature()
+	{
+		return temperature;
+	}
+	
+	public int getWindSpeed()
+	{
+		return windSpeed;
+	}
+	
+	public double getPrecip()
+	{
+		return liquidPrecip;
+	}
+	
+	public double getIce()
+	{
+		return iceAccum;
+	}
+	
+	public double getSnow()
+	{
+		return snowAmount;
+	}
+	
+	public int getGust()
+	{
+		return gustSpeeds;
+	}
+	
+	public int getHumidity()
+	{
+		return humidity;
+	}
+	
+	public int getZip()
+	{
+		return zipcode;
+	}
+	
+	public void printWeather()
+	{
+		
+		System.out.println("zipcode: " + zipcode + " timeapp: " + timeApplicable + " timeUpdate " + lastUpdated + " temperature: "
+				 + temperature + " liquidPrecip: " + liquidPrecip + " windSpeed: " + windSpeed + " iceAccum " + iceAccum + 
+				 " snowAmount " + snowAmount + " gustSpeeds: " + gustSpeeds + " humidty: " + humidity);
 	}
 }

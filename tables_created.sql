@@ -1,7 +1,7 @@
 CREATE TABLE WeatherPrediction(
 	zipcode INT NOT NULL,
-	time_Applicable VARCHAR(19) NOT NULL,
-	last_Updated VARCHAR(19) NOT NULL,
+	time_Applicable VARCHAR(30) NOT NULL,
+	last_Updated VARCHAR(30) NOT NULL,
 	temp INT,
 	liquid_Precip DOUBLE,
 	wind_Speed INT,

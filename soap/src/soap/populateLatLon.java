@@ -67,10 +67,10 @@ public class populateLatLon {
         Statement st = null;
         ResultSet rs = null;
 
-        //Current database is hosted on local development machine
+        // Current database is hosted on local development machine
         String url = "jdbc:mysql://localhost:3306/foo";
         
-        //
+        // Local database has this user set up for access to latlon and weatherprediction tables on database foo
         String user = "tester";
         String password = "userpass";
         try {
@@ -83,30 +83,43 @@ public class populateLatLon {
         }
         
         try {
+        	// Create Drivermanager and execute versionquery
             con = DriverManager.getConnection(url, user, password);
             st = con.createStatement();
             rs = st.executeQuery("SELECT VERSION()");
 
+            // Output versionquery to check for established connection
             if (rs.next()) {
                 System.out.println(rs.getString(1));
             }
+            /*
+             * Using preparedStatement so that we don't have to worry about sql injection
+             * If a row already exists we leave it alone since this information is static
+             * If there is a change to a zipcodes coordinates this may have to change or we can just flush the table
+             * and run the program again
+            */
             PreparedStatement pst = con.prepareStatement("INSERT INTO latLon(zipcode, lattitude, longitude) VALUES(?, ?, ?) "
             		+ "ON DUPLICATE KEY UPDATE zipcode = zipcode, lattitude = lattitude, longitude = longitude;");
             
+            // We have to create a statement for each line in the zip file
             for(int x = 0; x < Zips.size(); x++)
             {
 	            String[] toInsert = (String[]) Zips.get(x);
 	            
+	            // setstring sets the ? values in the preparedStatement with the data from the zips arraylist
 	            pst.setString(1, toInsert[0]);
 	            pst.setString(2, toInsert[1]);
 	            pst.setString(3, toInsert[2]);
 	            
+	            // we add each statement to a batch that is later executed
 	            pst.addBatch();
 	            
-	            System.out.println(x);
+	            // System.out.println(x);
+	            
+	            // This if statement executes the batch every 1000 lines or at the end of the arraylist zips.
 	            if( x % 1000 == 0 || x == (Zips.size() - 1))
 	            {
-		            pst.executeUpdate();
+		            pst.executeBatch();
 		            System.out.println("Executed " + x + " rows");
 	            }
 
