@@ -316,7 +316,6 @@ class WeatherRequest implements Runnable {
 		             * currentHourPrediction.printWeather();
 		             */
 		            
-		            
 		            // setstring sets the ? values in the preparedStatement with the data from the zips arraylist
 		            pst.setInt(1, currentHourPrediction.getZip());
 		            pst.setString(2, currentHourPrediction.getTimeApplicable());
@@ -417,7 +416,11 @@ class WeatherRequest implements Runnable {
 				
 				if(toAddToPulledLines.trim().isEmpty() != true) {
 					//System.out.println(toAddToPulledLines);
-					pulledLines.add(toAddToPulledLines);
+					
+					//Check if previous tag is <end-valid-time>
+					if(xml.substring(indexForLeftPre, indexForRightPre).contains("end") != true) {
+						pulledLines.add(toAddToPulledLines);
+					}
 				}
 
 				// This for loop searches for keywords that we need to pull the previous tag on.
@@ -452,145 +455,182 @@ class WeatherRequest implements Runnable {
 	}
 	
 	
+	private ArrayList<ArrayList> sortLines(ArrayList<String> pulledLines) {
+		
+		int pulledLinesIndex = 0;
+		int pulledLinesSize = pulledLines.size();
+		ArrayList<ArrayList> dataTimeStamps = new ArrayList();
+		ArrayList<ArrayList> dataWeather = new ArrayList();
+		boolean isPassed = false;
+		
+		//This while loop creates two arrayList containing arrayLists of Strings
+		//dataTimeStamps contain the arraylists with the time stamp key in the first string of the arraylist and all the relevant timestamps that follow
+		//dataWeather is similar with the first string being the name of the data contained, the second string being the timestamp key
+		// and all the relevant data we are trying to collect follows.
+		while(pulledLinesIndex < pulledLinesSize) {
+			String toSort = pulledLines.get(pulledLinesIndex);
+			pulledLinesIndex++;
+			//System.out.println(toSort);
+			// Test if this is a timestamp key
+			//first if statement is for error checking
+			
+			if(toSort.length() > 2) {
+				// This if line tests to see if the block of data is one of the keywords types that we are looking for
+				if((toSort.equalsIgnoreCase(keywords[0]) == true) || (toSort.equalsIgnoreCase(keywords[1]) == true) || 
+					(toSort.equalsIgnoreCase(keywords[2]) == true) || (toSort.equalsIgnoreCase(keywords[3]) == true) || 
+					(toSort.equalsIgnoreCase(keywords[4]) == true) || (toSort.equalsIgnoreCase(keywords[5]) == true) || 
+					(toSort.equalsIgnoreCase(keywords[6]) == true)) {
+					
+					ArrayList<String> dataWeatherTemp = new ArrayList();
+					
+					//keyword is added
+					dataWeatherTemp.add(toSort);
+					//System.out.println(toSort);
+					
+					toSort = pulledLines.get(pulledLinesIndex);
+					pulledLinesIndex++;
+					
+					//timestamp key is pulled from the line and added
+					dataWeatherTemp.add(toSort.substring(toSort.indexOf("k-"), toSort.length() - 1));
+					//System.out.println(toSort.substring(toSort.indexOf("k-"), toSort.length() - 2));
+					
+					toSort = pulledLines.get(pulledLinesIndex);
+					pulledLinesIndex++;
+					//This while loop takes each of the lines of data and adds it to the temporty arraylist
+					while(toSort.length() < 8) {
+						dataWeatherTemp.add(toSort);
+						toSort = pulledLines.get(pulledLinesIndex);
+						pulledLinesIndex++;
+						//System.out.println(toSort + "here");
+					}
+					// The temp arraylist is added to the arraylist of arraylist dataWeather
+					pulledLinesIndex--;
+					dataWeather.add(dataWeatherTemp);
+				}
+				//else if statement for checking for timestamps which always start with k-
+				else if((toSort.charAt(0) == 'k') && (toSort.charAt(1) == '-') && isPassed == false) {
+					//Add timestamp key and then following timestamps to a String arraylist
+					ArrayList<String> timeStampTemp = new ArrayList();
+					
+					//Temp arraylist to be added after the while loop completes
+					timeStampTemp.add(toSort);
+					//System.out.println(toSort); // for debugging
+					toSort = pulledLines.get(pulledLinesIndex);
+					pulledLinesIndex++;
+					//While loop goes through each of the timestamps and adds them to the temporary arraylist
+					while(((toSort.charAt(0) != 'k') && (toSort.charAt(1) != '-'))
+							&& (toSort.equalsIgnoreCase("Daily Maximum Temperature") == false)) {
+						timeStampTemp.add(toSort);
+						//System.out.println(toSort);
+						toSort = pulledLines.get(pulledLinesIndex);
+						pulledLinesIndex++;
+					}
+					pulledLinesIndex--;
+					// the temporary arraylist is added to the arraylist of arraylist dataTimeStamps
+					dataTimeStamps.add(timeStampTemp);
+				}	
+			}
+		}
+		
+		ArrayList<ArrayList> toReturnCombinedLists = new ArrayList();
+		toReturnCombinedLists.add(dataTimeStamps);
+		toReturnCombinedLists.add(dataWeather);
+		return toReturnCombinedLists;
+	}
+	
+	private ArrayList<String> getMasterTimeStamp(ArrayList<ArrayList> dataTimeStamps, ArrayList<ArrayList> dataWeather) {
+		//tempParameter holds one of the data types that we are looking to store in the case of dataWeather.get(0) it is temperature
+				ArrayList tempParameter = dataWeather.get(0);
+				//parameterName should just be "Temperature"
+				String parameterName = (String) tempParameter.get(0);
+				//dataTimeKey is the timestamp key that pertains to the parameter temperature
+				String dataTimeKey = (String) tempParameter.get(1);
+				//System.out.println(parameterName + " " + parameterKey);
+				
+
+				// pulledFromDataTimeStamps is the first arraylist of timestamps stored in dataTimeStamps arraylist of arraylists
+				// its initialized here for reasons but later the same data is initialized in the for loop
+				ArrayList pulledFromDataTimeStamps = dataTimeStamps.get(0);
+				//System.out.println(dataTimeStamps.size());
+				
+				// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
+				int relevantTimeData = 0;
+				
+				//goal of this for loop is to find the index of the matching timestamp keys between the arraylists of timestamps and
+				//the parameters stored key
+				//System.out.println("datatimestamps.size(): " + dataTimeStamps.size());
+				
+				for(int b = 0; b < dataTimeStamps.size(); b++) {
+					pulledFromDataTimeStamps = dataTimeStamps.get(b);
+					String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
+					//System.out.println(dataTimeKey + " " + timeStampTest);
+					
+					if(timeStampTest.equals(dataTimeKey)) {
+						//System.out.println(dataTimeKey + " " + timeStampTest + " " + "success" + " " + parameterName);
+						relevantTimeData = b;
+						break;
+						
+					}
+				}
+				//System.out.println("relevantTimeData: " + relevantTimeData);
+				
+				ArrayList masterTimeStamp = dataTimeStamps.get(relevantTimeData);
+				
+				return masterTimeStamp;
+	}
+	
+	private HourPrediction[] setPredictionTemperature(HourPrediction[] prediction, String[] toParse, ArrayList<ArrayList> dataTimeStamps, ArrayList<ArrayList> dataWeather, ArrayList<String> masterTimeStamp) {
+		
+		/* 
+		 * Now we need to construct objects for each hour to be added to the database
+		 * 64 or less hours are set for each parsed document
+		*/
+		
+		//tempParameter holds one of the data types that we are looking to store in the case of dataWeather.get(0) it is temperature
+		ArrayList tempParameter = dataWeather.get(0);
+		
+		//prediction is an array of objects that we are attempting to sort all of the parameters into for each hours prediction
+		prediction = new HourPrediction[tempParameter.size()-2];
+		
+		//The follow sets temperature
+		for(int z = 2; z < tempParameter.size(); z++) {
+			//System.out.println(tempParameter.get(z));
+			//System.out.println(masterTimeStamp.get(z-1));
+			String predictionTimeStamp = (String) masterTimeStamp.get(z-1);
+			prediction[z-2] = new HourPrediction(toParse[1], predictionTimeStamp);
+			prediction[z-2].setTemperature((String) tempParameter.get(z)); 
+		}
+		
+		return prediction;
+		
+	}
+	
 	private HourPrediction[] parse(String[] parseThis) throws Exception {
 		
 		HourPrediction[] prediction = null;
 		String[] toParse = parseThis;
 		String xml = toParse[0];
+		
 		ArrayList<String> pulledLines = getPulledLines(parseThis);
+		ArrayList<ArrayList> combinedTimeAndWeather = sortLines(pulledLines);
+		
+		ArrayList<ArrayList> dataTimeStamps = combinedTimeAndWeather.get(0);
+		ArrayList<ArrayList> dataWeather = combinedTimeAndWeather.get(1);
+		
+		//The following will either have to be arguments or initialized in each parameter set method
+		ArrayList tempParameter = dataWeather.get(0);
+		String parameterName = (String) tempParameter.get(0);
+		String dataTimeKey = (String) tempParameter.get(1);
+		ArrayList pulledFromDataTimeStamps = dataTimeStamps.get(0);
+		int relevantTimeData = 0;
+		
+		//get the master time stamp from the matching temperature data
+		ArrayList<String> masterTimeStamp = getMasterTimeStamp(dataTimeStamps, dataWeather);
+		
+		prediction = setPredictionTemperature(prediction, toParse, dataTimeStamps, dataWeather, masterTimeStamp);
 		
 		try {
 			
-			
-			int pulledLinesIndex = 0;
-			int pulledLinesSize = pulledLines.size();
-			ArrayList<ArrayList> dataTimeStamps = new ArrayList();
-			ArrayList<ArrayList> dataWeather = new ArrayList();
-			boolean isPassed = false;
-			
-			//This while loop creates two arrayList containing arrayLists of Strings
-			//dataTimeStamps contain the arraylists with the time stamp key in the first string of the arraylist and all the relevant timestamps that follow
-			//dataWeather is similar with the first string being the name of the data contained, the second string being the timestamp key
-			// and all the relevant data we are trying to collect follows.
-			while(pulledLinesIndex < pulledLinesSize) {
-				String toSort = pulledLines.get(pulledLinesIndex);
-				pulledLinesIndex++;
-				//System.out.println(toSort);
-				// Test if this is a timestamp key
-				//first if statement is for error checking
-				
-				if(toSort.length() > 2) {
-					// This if line tests to see if the block of data is one of the keywords types that we are looking for
-					if((toSort.equalsIgnoreCase(keywords[0]) == true) || (toSort.equalsIgnoreCase(keywords[1]) == true) || 
-						(toSort.equalsIgnoreCase(keywords[2]) == true) || (toSort.equalsIgnoreCase(keywords[3]) == true) || 
-						(toSort.equalsIgnoreCase(keywords[4]) == true) || (toSort.equalsIgnoreCase(keywords[5]) == true) || 
-						(toSort.equalsIgnoreCase(keywords[6]) == true)) {
-						
-						ArrayList<String> dataWeatherTemp = new ArrayList();
-						
-						//keyword is added
-						dataWeatherTemp.add(toSort);
-						//System.out.println(toSort);
-						
-						toSort = pulledLines.get(pulledLinesIndex);
-						pulledLinesIndex++;
-						
-						//timestamp key is pulled from the line and added
-						dataWeatherTemp.add(toSort.substring(toSort.indexOf("k-"), toSort.length() - 1));
-						//System.out.println(toSort.substring(toSort.indexOf("k-"), toSort.length() - 2));
-						
-						toSort = pulledLines.get(pulledLinesIndex);
-						pulledLinesIndex++;
-						//This while loop takes each of the lines of data and adds it to the temporty arraylist
-						while(toSort.length() < 8) {
-							dataWeatherTemp.add(toSort);
-							toSort = pulledLines.get(pulledLinesIndex);
-							pulledLinesIndex++;
-							//System.out.println(toSort + "here");
-						}
-						// The temp arraylist is added to the arraylist of arraylist dataWeather
-						pulledLinesIndex--;
-						dataWeather.add(dataWeatherTemp);
-					}
-					//else if statement for checking for timestamps which always start with k-
-					else if((toSort.charAt(0) == 'k') && (toSort.charAt(1) == '-') && isPassed == false) {
-						//Add timestamp key and then following timestamps to a String arraylist
-						ArrayList<String> timeStampTemp = new ArrayList();
-						
-						//Temp arraylist to be added after the while loop completes
-						timeStampTemp.add(toSort);
-						//System.out.println(toSort); // for debugging
-						toSort = pulledLines.get(pulledLinesIndex);
-						pulledLinesIndex++;
-						//While loop goes through each of the timestamps and adds them to the temporary arraylist
-						while(((toSort.charAt(0) != 'k') && (toSort.charAt(1) != '-'))
-								&& (toSort.equalsIgnoreCase("Daily Maximum Temperature") == false)) {
-							timeStampTemp.add(toSort);
-							//System.out.println(toSort);
-							toSort = pulledLines.get(pulledLinesIndex);
-							pulledLinesIndex++;
-						}
-						pulledLinesIndex--;
-						// the temporary arraylist is added to the arraylist of arraylist dataTimeStamps
-						dataTimeStamps.add(timeStampTemp);
-					}	
-				}
-			}
-			
-			
-			/* 
-			 * Now we need to construct objects for each hour to be added to the database
-			 * 64 or less hours are set for each parsed document
-			*/
-			
-			//tempParameter holds one of the data types that we are looking to store in the case of dataWeather.get(0) it is temperature
-			ArrayList tempParameter = dataWeather.get(0);
-			//parameterName should just be "Temperature"
-			String parameterName = (String) tempParameter.get(0);
-			//dataTimeKey is the timestamp key that pertains to the parameter temperature
-			String dataTimeKey = (String) tempParameter.get(1);
-			//System.out.println(parameterName + " " + parameterKey);
-			
-			//prediction is an array of objects that we are attempting to sort all of the parameters into for each hours prediction
-			prediction = new HourPrediction[tempParameter.size()-2];
-	
-			// pulledFromDataTimeStamps is the first arraylist of timestamps stored in dataTimeStamps arraylist of arraylists
-			// its initialized here for reasons but later the same data is initialized in the for loop
-			ArrayList pulledFromDataTimeStamps = dataTimeStamps.get(0);
-			//System.out.println(dataTimeStamps.size());
-			
-			// relevantTimeData is the index of the arrayList containing the timeStamps inside dataTimeStamps
-			int relevantTimeData = 0;
-			
-			//goal of this for loop is to find the index of the matching timestamp keys between the arraylists of timestamps and
-			//the parameters stored key
-			//System.out.println("datatimestamps.size(): " + dataTimeStamps.size());
-			
-			for(int b = 0; b < dataTimeStamps.size(); b++) {
-				pulledFromDataTimeStamps = dataTimeStamps.get(b);
-				String timeStampTest = (String) pulledFromDataTimeStamps.get(0);
-				//System.out.println(dataTimeKey + " " + timeStampTest);
-				
-				if(timeStampTest.equals(dataTimeKey)) {
-					//System.out.println(dataTimeKey + " " + timeStampTest + " " + "success" + " " + parameterName);
-					relevantTimeData = b;
-					break;
-					
-				}
-			}
-			//System.out.println("relevantTimeData: " + relevantTimeData);
-			
-			ArrayList masterTimeStamp = dataTimeStamps.get(relevantTimeData);
-			//System.out.println("tempTimeStamp length: " + tempTimeStamp.size());
-			
-			//The follow sets temperature
-			for(int z = 2; z < tempParameter.size(); z++) {
-				//System.out.println(tempParameter.get(z));
-				//System.out.println(masterTimeStamp.get(z-1));
-				String predictionTimeStamp = (String) masterTimeStamp.get(z-1);
-				prediction[z-2] = new HourPrediction(toParse[1], predictionTimeStamp);
-				prediction[z-2].setTemperature((String) tempParameter.get(z)); 
-			}
 			
 			//The following sets liquid precipitation amount
 			tempParameter = dataWeather.get(1);
@@ -618,7 +658,8 @@ class WeatherRequest implements Runnable {
 			int offSetFromMaster = 0;
 			
 			for(int a = 1; a < pulledFromDataTimeStamps.size(); a++) {
-				if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a))) {
+				//System.out.println(pulledFromDataTimeStamps.get(a) + " " + masterTimeStamp.get(1));
+				if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(1))) {
 					offSetFromMaster = a - 1;
 					//System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a) + " " + parameterName);
 					break;
@@ -627,7 +668,10 @@ class WeatherRequest implements Runnable {
 			
 			//Now that we know the offset we can set precipitation amount
 			for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++) {
-				prediction[c].setPrecip((String) tempParameter.get(c)); 
+				prediction[c - 2 - offSetFromMaster].setPrecip((String) tempParameter.get(c)); 
+				//System.out.println((String) tempParameter.get(c));
+				//System.out.println(c);
+				//prediction[c - 2 - offSetFromMaster].printWeather();
 			}
 			
 			//The following sets wind speed
@@ -665,7 +709,7 @@ class WeatherRequest implements Runnable {
 			
 			//Now that we know the offset we can set wind amount 
 			for(int c = offSetFromMaster + 2; c < tempParameter.size(); c++) {
-				prediction[c-2].setWindSpeed((String) tempParameter.get(c)); 
+				prediction[c - 2 - offSetFromMaster].setWindSpeed((String) tempParameter.get(c)); 
 			}
 			
 			//The following sets Ice accumulation
@@ -696,7 +740,7 @@ class WeatherRequest implements Runnable {
 			for(int a = 1; a < pulledFromDataTimeStamps.size(); a++) {
 				if(pulledFromDataTimeStamps.get(a).equals(masterTimeStamp.get(a))) {
 					offSetFromMaster = a - 1;
-					//System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a) + " " + parameterName);
+					System.out.println("Sucess " + offSetFromMaster + " " + pulledFromDataTimeStamps.get(a) + " " + parameterName);
 					break;
 				}
 			}
@@ -711,7 +755,7 @@ class WeatherRequest implements Runnable {
 						break;
 					}
 					
-					prediction[(c-2)*6 + d].setIce((String) tempParameter.get(c)); 
+					prediction[(c-2)*6 + d - offSetFromMaster].setIce((String) tempParameter.get(c)); 
 					overallIceCount++;
 				}
 			}
@@ -754,7 +798,7 @@ class WeatherRequest implements Runnable {
 					if(overallSnowCount >= prediction.length) {
 						break;
 					}
-					prediction[(c-2)*6 + d].setSnow((String) tempParameter.get(c)); 
+					prediction[(c-2)*6 + d - offSetFromMaster].setSnow((String) tempParameter.get(c)); 
 					overallSnowCount++;
 				}
 			}
@@ -798,7 +842,7 @@ class WeatherRequest implements Runnable {
 					if(overallGustCount >= prediction.length) {
 						break;
 					}
-					prediction[(c-2)*3 + d].setGust((String) tempParameter.get(c)); 
+					prediction[(c-2)*3 + d - offSetFromMaster].setGust((String) tempParameter.get(c)); 
 					overallGustCount++;
 				}
 			}
@@ -841,12 +885,12 @@ class WeatherRequest implements Runnable {
 					if(overallHumCount >= prediction.length) {
 						break;
 					}
-					prediction[(c-2)*3 + d].setHumidity((String) tempParameter.get(c)); 
+					prediction[(c-2)*3 + d - offSetFromMaster].setHumidity((String) tempParameter.get(c)); 
 					overallHumCount++;
 				}
 			}
 		}catch (Exception e) {
-      	  //System.out.println("What the fuck is happening : " + e.getMessage());
+      	  System.out.println("What is happening : " + e.getMessage());
       	  //System.out.println(Thread.currentThread().getStackTrace()[2].getLineNumber());
       }
 		return prediction;

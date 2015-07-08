@@ -21,7 +21,7 @@ class HourPrediction
 		zipcode = Integer.parseInt(zip);
 		timeApplicable = timeApp;
 		updateTime();
-		System.out.println("Created hourPrediciton with zip: " + zip + " and timeStamp " + timeApp);
+		//System.out.println("Created hourPrediciton with zip: " + zip + " and timeStamp " + timeApp);
 	}
 	
 	private void updateTime() {
