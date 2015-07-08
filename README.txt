@@ -21,6 +21,6 @@ a full picture of each hour's weather prediction. Then it may be entered into th
 MySQL database.
 
 See NDFD_XML_Example.xml for a sample file returned by the National Weather Service's 
-NDFD we service.
+NDFD web service.
 
 ********************************************************************************
