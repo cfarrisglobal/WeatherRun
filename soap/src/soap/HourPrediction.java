@@ -1,3 +1,14 @@
+/*
+ * Created by Charles Cody Farris 7/7/15
+ * 
+ * Last updated 7/8/15
+ * 
+ * This java class holds the prediction data from the ndfd servers.
+ * 
+ * Each object created with this class holds 1 hour of prediction data for a single zip code.
+ * 
+ */
+
 package soap;
 
 import java.sql.Timestamp;

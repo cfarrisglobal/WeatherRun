@@ -1,38 +1,27 @@
 /*
  * Created by Charles Cody Farris 6/10/15
  * 
- * Last updated 7/7/15
+ * Last updated 7/8/15
  * 
- * Programs purpose is to populate a database with the National Weather Service's weather prediction data.
+ * This is the main class for the NDFD data request and insert into the local database.
+ * Overall the purpose of this program is to populate a database containing weather prediction data
+ * for each US zip code. The weather parameters that we are after are temperature, rainfall, snowfall,
+ * ice accumulation, humidity, wind speed and wind gusts.
  * 
- * This is done by using SOAP requests to the NDFD database and then sorting and inserting the relevant data.
+ * These parameters were chosen based on their availability and usefulness in driving fitness related
+ * weather applications.
+ * 
+ * Here we drive the WeatherRequest class after pulling the relevant zipcode, lattitude and longitude
+ * from the NewZipFile.txt
  * 
  */
 
 
 package soap;
 
-
-import javax.xml.soap.*;
-import javax.xml.ws.Dispatch;
-import javax.xml.ws.Service;
-import javax.xml.ws.soap.SOAPFaultException;
-import javax.xml.namespace.QName;
-
 import java.io.*;
-import java.net.URL;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
-import java.sql.Timestamp;
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 public class NDFD_SOAP {
 	
@@ -41,7 +30,6 @@ public class NDFD_SOAP {
 		//Put all valid zip codes stored in txt file into arraylist
 		ArrayList<String[]> Zips = new ArrayList();
 		Zips = getZips();
-		
 		
 		/*
 		 * Depending on what system this is running on you may want to increase or decrease the number of threads

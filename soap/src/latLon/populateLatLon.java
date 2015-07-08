@@ -1,4 +1,16 @@
-package soap;
+/*
+ * Created by Charles Cody Farris 6/10/15
+ * 
+ * Last updated 7/8/15
+ * 
+ * Programs purpose is to populate a database table containing US Zip codes and their relevant lattitude
+ * and longitude.
+ * 
+ * This is done by reading a txt file containing one entry per line
+ * 
+ */
+
+package latLon;
 
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
@@ -11,15 +23,14 @@ import java.sql.*;
 
 public class populateLatLon {
 
-	public static void main(String[] args)
-	{
+	public static void main(String[] args) {
+		
 		ArrayList toInsert = getZips();
 		insertZips(toInsert);
-		
 	}
 	
-	public static ArrayList getZips()
-	{
+	public static ArrayList getZips() {
+		
 		String zipCodeFile = "NewZipFile.txt";
 		String line = null;
 		ArrayList<String[]> allZips = new ArrayList();
@@ -47,13 +58,11 @@ public class populateLatLon {
 			getZipsBufferedReader.close();
 		}
 		
-		catch(FileNotFoundException ex)
-		{
+		catch(FileNotFoundException ex) {
 			System.out.println("Unable to open file '" + zipCodeFile + "'");
 		}
 		
-		catch(IOException ex)
-		{
+		catch(IOException ex) {
 			System.out.println("Error reading file '" + zipCodeFile + "'");
 			ex.printStackTrace();
 		}
@@ -61,9 +70,9 @@ public class populateLatLon {
 		return allZips;
 	}
 	
-	public static void insertZips(ArrayList Zips)
-	{
-        Connection con = null;
+	public static void insertZips(ArrayList Zips) {
+        
+		Connection con = null;
         Statement st = null;
         ResultSet rs = null;
 
@@ -102,11 +111,10 @@ public class populateLatLon {
             		+ "ON DUPLICATE KEY UPDATE zipcode = zipcode, lattitude = lattitude, longitude = longitude;");
             
             // We have to create a statement for each line in the zip file
-            for(int x = 0; x < Zips.size(); x++)
-            {
+            for(int x = 0; x < Zips.size(); x++) {
 	            String[] toInsert = (String[]) Zips.get(x);
 	            
-	            // setstring sets the ? values in the preparedStatement with the data from the zips arraylist
+	            // set string sets the ? values in the preparedStatement with the data from the zips arraylist
 	            pst.setString(1, toInsert[0]);
 	            pst.setString(2, toInsert[1]);
 	            pst.setString(3, toInsert[2]);
